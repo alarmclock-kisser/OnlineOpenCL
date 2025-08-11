@@ -30,7 +30,7 @@ namespace OnlineOpenCL.Api.Controllers
 		private Task<ClStatusInfo> statusInfoTask => Task.Run(() => new ClStatusInfo(this.openClService));
 		private Task<IEnumerable<ClDeviceInfo>> deviceInfosTask =>Task.Run(() => this.openClService.DevicesPlatforms.Select((device, index) => new ClDeviceInfo(this.openClService, index)));
 		private Task<IEnumerable<ClMemInfo>> memoryInfosTask => Task.Run(() => this.openClService.Register?.Memory.Select((mem, index) => new ClMemInfo(mem)) ?? []);
-		private Task<IEnumerable<ClKernelInfo>> kernelInfosTask => Task.Run(() => this.openClService.Compiler?.KernelFiles.Select(k => new ClKernelInfo(this.openClService.Compiler, k)) ?? []);
+		private Task<IEnumerable<ClKernelInfo>> kernelInfosTask => Task.Run(() => this.openClService.Compiler?.KernelFiles.Where(f => f.ToLower().Contains(this.kernelFilter.ToLower())).Select(k => new ClKernelInfo(this.openClService.Compiler, k)) ?? []);
 		private Task<ClUsageInfo> usageInfoTask => Task.Run(() => new ClUsageInfo(this.openClService, this.sizeMagnitude, this.Decimals));
 
 

@@ -1,0 +1,435 @@
+﻿@page "/Fractal"
+
+@using OnlineOpenCL.Client
+@using OnlineOpenCL.Shared
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@using Radzen
+@using Radzen.Blazor
+@using System.Linq
+@using System.Drawing
+
+@inject IJSRuntime JSRuntime
+@inject ApiClient ApiClient
+@inject ApiUrlConfig ApiConfig
+
+<!-- Title -->
+<h1 style="font-family: 'Arial Black'">OnlineOpenCL : Fractals Explorer<br></h1>
+
+<!-- Initialized status -->
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+    <RadzenText Text="OpenCL Status:" TextStyle="TextStyle.Subtitle1" />
+    <RadzenText Text="@openClServiceInfo.Status" Style="@(openClServiceInfo.Initialized ? "color: green" : "color: red")" />
+</RadzenStack>
+
+<!-- Image -->
+<RadzenStack @onkeydown:preventDefault>
+    <RadzenStack Orientation="Orientation.Vertical"
+                 Style="width:100%; padding: 1rem;"
+                 tabindex="0"
+                 @onkeydown="OnImageKeyDown" >
+        <RadzenImage 
+        
+            Style="width:100%; height:auto; cursor: pointer;"
+            Src="@imageBase64" />
+    </RadzenStack>
+</RadzenStack>
+
+<!-- Navigation elements -->
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+    <RadzenNumeric Name="NumericStepSize" Style="width: 15%; max-width: 240px" Placeholder="Step size" @bind-Value="@stepSize" />
+    <RadzenButton Name="ButtonResetView" Style="width: 15%; max-width: 300px" Text="Reset" ButtonType="ButtonType.Submit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Medium" Variant="Variant.Filled" Click="@ResetView"></RadzenButton>
+    <RadzenText Name="TextLastProcessingTime" Style="width: 20%" Text="@("Delay: " + lastProcessingTime + " ms")"></RadzenText>
+</RadzenStack>
+
+<!-- Images list -->
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.5rem" class="rz-p-sm-12" Reverse="false">
+    <RadzenListBox Data="@imageInfos" TextProperty="Name" ValueProperty="Id" @bind-Value="@selectedImageId"
+                   Style="width: 100%; max-width: 600px; height: 200px;" Name="ListBoxImageObjects" Placeholder="-- Select Image Object --" 
+                   Change="@(args => LoadImage(args as Guid?))"> </RadzenListBox>
+    <RadzenStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.5rem" class="re-p-sm-12" Reverse="false">
+        <RadzenText Text="Image Upload" TextStyle="TextStyle.Subtitle1" />
+        <InputFile id="imageUpload" OnChange="OnImageUpload" accept="image/*" class="rz-mb-2" />
+        <RadzenButton Name="ButtonDownloadImageObject" Style="width: 140px; font-family: Arial; background-color: #e0e0e0" Text="Download" ButtonType="ButtonType.Submit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Medium" Variant="Variant.Filled" Disabled="@(selectedImageId == Guid.Empty)" Click="@OnDownloadSelected"></RadzenButton>
+        <RadzenButton Name="ButtonDeleteImageObject" Style="width: 140px; font-family: Arial; background-color: #e0e0e0" Text="Remove" ButtonType="ButtonType.Submit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Medium" Variant="Variant.Filled" Disabled="@(selectedImageId == Guid.Empty)" Click="@OnRemoveImageObj"></RadzenButton>
+    </RadzenStack>
+</RadzenStack>
+
+<!-- Mandelbrot execution section (input elements + button)-->
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+    <RadzenTextBox Name="TextBoxKernelName" Style="width: 20%;" Placeholder="Kernel Name" @bind-Value="@kernelName" />
+    <RadzenTextBox Name="TextBoxKernelVersion" Style="width: 5%;" Placeholder="Kernel Version" @bind-Value="@kernelVersion" />
+    <RadzenNumeric Name="NumericWidth" Style="width: 10%;" Placeholder="Width" @bind-Value="@width" />
+    <RadzenNumeric Name="NumericHeight" Style="width: 10%;" Placeholder="Height" @bind-Value="@height" />
+    <RadzenNumeric Name="NumericZoom" Style="width: 10%;" Placeholder="Zoom" @bind-Value="@zoom" />
+    <RadzenNumeric Name="NumericOffsetX" Style="width: 10%;" Placeholder="Offset X" @bind-Value="@offsetX" />
+    <RadzenNumeric Name="NumericOffsetY" Style="width: 10%;" Placeholder="Offset Y" @bind-Value="@offsetY" />
+    <RadzenNumeric Name="NumericIterations" Style="width: 10%;" Placeholder="Iterations" @bind-Value="@iterations" />
+    <RadzenColorPicker Name="ColorPickerColor" @bind-Value="@color" IconColor="@color" Style="width: 100px; height: 40px;" />
+    <RadzenText Text="Temp?" Style="width: 10%"></RadzenText>
+    <RadzenCheckBox Name="CheckBoxRandomColors" @bind-Value="@randomColors"></RadzenCheckBox>
+    <RadzenButton Name="ButtonExecuteMandelbrot"
+                  Style="width: 120px; font-family: Arial; background-color: #e0e0e0"
+                  Text="Execute"
+                  ButtonType="ButtonType.Submit"
+                  ButtonStyle="ButtonStyle.Light"
+                  Size="ButtonSize.Medium"
+                  Variant="Variant.Filled"
+                  Click="@ExecuteMandelbrot"></RadzenButton>
+</RadzenStack>
+
+<!-- Scrolling log list -->
+<div id="logContainer" @ref="logContainer" style="height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; background-color: #f9f9f9;">
+    @foreach (var logEntry in logEntries)
+    {
+        <div>@logEntry</div>
+    }
+</div>
+
+@code {
+
+
+
+
+
+
+
+    private ClStatusInfo openClServiceInfo = new();
+
+    private Guid selectedImageId = Guid.Empty;
+    private IEnumerable<ImageObjInfo> imageInfos = [];
+    private string downloadFormat = "bmp";
+
+
+    private string base64Format = "png";
+    private string prevImageBase64 = string.Empty;
+    private string imageBase64 = string.Empty;
+
+    private string kernelName = "mandelbrotPrecise";
+    private string kernelVersion = "01";
+    private int width = 1920;
+    private int height = 1080;
+    private double zoom = 1.0;
+    private double offsetX = 0.0;
+    private double offsetY = 0.0;
+    private int iterations = 32;
+    private Color systemColor = ColorTranslator.FromHtml("#000000");
+    private bool randomColors = true;
+
+    private int stepSize = 4;
+
+
+    private double lastProcessingTime = 0.0;
+
+    private ImageObjInfo selectedImageInfo => imageInfos.FirstOrDefault(i => i.Id == selectedImageId) ?? new ImageObjInfo(null);
+
+
+    private readonly List<string> logEntries = [];
+    private ElementReference logContainer;
+
+
+
+    private void AddLogEntry(string message)
+    {
+        logEntries.Add($"{DateTime.Now:HH:mm:ss:fff} - {message}");
+        if (logEntries.Count > 100)
+        {
+            logEntries.RemoveAt(0);
+        }
+
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        AddLogEntry("Initializing Fractals page...");
+        await RefreshInfos();
+    }
+
+    protected async Task RefreshInfos()
+    {
+        // Get OpenCL infos
+        openClServiceInfo = await ApiClient.GetOpenClServiceInfo();
+
+        // Get image infos
+        imageInfos = await ApiClient.GetImageInfos();
+
+        AddLogEntry($"Refreshed infos.");
+
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (logEntries.Any())
+        {
+            await JSRuntime.InvokeVoidAsync("eval", $@"
+                var el = document.getElementById('logContainer');
+                if (el) {{
+                    el.scrollTop = el.scrollHeight;
+                }}
+            ");
+        }
+    }
+
+    protected async Task OnImageUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file.Size > 0)
+            {
+                await using var stream = file.OpenReadStream(maxAllowedSize: 512 * 1024 * 1024); // Max 512 MB
+                FileParameter fp = new FileParameter(stream, file.Name, file.ContentType);
+                var info = await ApiClient.UploadImage(fp);
+                AddLogEntry($"Uploaded '{info.Name}' successfully.");
+                await RefreshInfos();
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error uploading audio: {ex.Message}");
+        }
+    }
+
+    protected async Task OnDownloadSelected()
+    {
+        Guid? guidToDownload = null;
+        string fileName = "";
+
+        if (selectedImageId != Guid.Empty)
+        {
+            if (selectedImageInfo.Id != Guid.Empty)
+            {
+                guidToDownload = selectedImageInfo.Id;
+                fileName = selectedImageInfo.Name;
+            }
+        }
+
+        if (guidToDownload.HasValue)
+        {
+            AddLogEntry($"Downloading image with Guid: {guidToDownload.Value}...");
+            try
+            {
+                // Direkt die URL zum API-Endpunkt aufrufen
+                string downloadUrl = $"{ApiConfig.Url}/api/image/download/{guidToDownload.Value}/{downloadFormat}";
+
+                // Rufe die JavaScript-Funktion auf, um den Download zu starten
+                await JSRuntime.InvokeVoidAsync("downloadFileFromUrl", downloadUrl, $"{fileName}.{downloadFormat}");
+
+                // Füge diese Zeile hinzu:
+                AddLogEntry($"Got Download-URL: {downloadUrl}");
+
+                AddLogEntry($"Downloading '{fileName}' started.");
+            }
+            catch (Exception ex)
+            {
+                AddLogEntry($"Error downloading '{fileName}': {ex.Message}");
+            }
+        }
+        else
+        {
+            AddLogEntry("No image selected to download.");
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OnRemoveImageObj()
+    {
+        if (selectedImageId == Guid.Empty)
+        {
+            AddLogEntry("No image selected to remove.");
+            return;
+        }
+
+        var result = await ApiClient.RemoveImage(selectedImageId);
+
+        if (result == true)
+        {
+            AddLogEntry($"Image with Guid {selectedImageId} removed successfully.");
+            await RefreshInfos();
+        }
+        else
+        {
+            AddLogEntry($"Failed to remove track with Guid {selectedImageId}.");
+        }
+
+        selectedImageId = Guid.Empty;
+
+        StateHasChanged();
+    }
+
+
+    private async Task LoadImage(Guid? guid = null)
+    {
+        // Before updating image-string with new value, remember previous
+        // prevImageBase64 = imageBase64;
+
+        guid ??= selectedImageId;
+
+        if (guid == Guid.Empty)
+        {
+            imageBase64 = string.Empty;
+            AddLogEntry("Guid was empty, cleared image data.");
+            return;
+        }
+
+        var obj = imageInfos.FirstOrDefault(i => i.Id == guid.Value);
+        if (obj == null)
+        {
+            AddLogEntry($"No image found for Guid '{guid.Value}'");
+            return;
+        }
+
+        try
+        {
+            var data = await ApiClient.GetBase64Image(guid.Value, base64Format);
+            imageBase64 = data.Data64;
+            AddLogEntry($"Retrieved base64 string from '{guid.Value}' (length: {data.Length})");
+        }
+        catch (Exception ex)
+        {
+            imageBase64 = string.Empty;
+            AddLogEntry($"Error getting base64 string for image '{guid.Value}': " + ex);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task<ImageObjInfo> ExecuteMandelbrot()
+    {
+        if (!openClServiceInfo.Initialized)
+        {
+            AddLogEntry("OpenCL is not initialized. Please select a device and initialize it first.");
+            return new ImageObjInfo();
+        }
+
+        try
+        {
+            AddLogEntry($"Executing mandelbrot kernel '{kernelName}{kernelVersion}' ({width}x{height}, [{zoom}*{offsetX}|{offsetY}] at x{iterations} on {systemColor.R}.{systemColor.G}.{systemColor.B}) {(randomColors ? "(random colors)" : "")} ...");
+
+            var result = await ApiClient.ExecuteFractal(
+                kernelName, kernelVersion, width, height, zoom, offsetX, offsetY, iterations,
+                systemColor.R, systemColor.G, systemColor.B, randomColors);
+
+            if (result.Id == Guid.Empty)
+            {
+                AddLogEntry("Mandelbrot execution returned null result.");
+                return new ImageObjInfo();
+            }
+
+            await RefreshInfos();
+
+
+            var prevImageGuid = selectedImageId;
+            selectedImageId = result.Id;
+
+            lastProcessingTime = result.ElapsedProcessing;
+            await LoadImage(selectedImageId);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error executing Mandelbrot kernel: {ex.Message}");
+        }
+
+        return new ImageObjInfo();
+    }
+
+    private async Task OnImageKeyDown(KeyboardEventArgs e)
+    {
+        bool changed = false;
+        double step = 0.1 / zoom;
+        const double zoomStep = 0.2;
+        const int iterStep = 8;
+        if (e.Key == "ArrowLeft")
+        {
+            offsetX -= step * stepSize;
+            changed = true;
+        }
+        else if (e.Key == "ArrowRight")
+        {
+            offsetX += step * stepSize;
+            changed = true;
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            if (e.CtrlKey)
+            {
+                zoom = zoom + zoom * zoomStep * stepSize;
+            }
+            else if (e.ShiftKey)
+            {
+                iterations += iterStep;
+            }
+            else
+            {
+                offsetY -= step * stepSize;
+            }
+
+            changed = true;
+        }
+        else if (e.Key == "ArrowDown")
+        {
+            if (e.CtrlKey)
+            {
+                zoom = zoom - zoom * zoomStep * stepSize;
+            }
+            else if (e.ShiftKey)
+            {
+                iterations += iterStep;
+            }
+            else
+            {
+                offsetY += step * stepSize;
+            }
+
+            changed = true;
+        }
+        if (changed)
+        {
+            await ExecuteMandelbrot();
+        }
+    }
+
+    private async Task ResetView()
+    {
+        // Reset all kernel args to default & regenerate image
+        zoom = 1.0;
+        offsetX = 0.0;
+        offsetY = 0.0;
+        iterations = 8;
+
+        await ExecuteMandelbrot();
+    }
+
+    // Farbwert als rgb(r, g, b) String für die UI und RadzenColorPicker
+    private string color
+    {
+        get => $"rgb({systemColor.R}, {systemColor.G}, {systemColor.B})";
+        set
+        {
+            // Versuche, value als rgb(r,g,b) zu parsen
+            if (!string.IsNullOrWhiteSpace(value) && value.StartsWith("rgb"))
+            {
+                var parts = value.Replace("rgb(", "").Replace(")", "").Split(',');
+                if (parts.Length == 3 &&
+                    int.TryParse(parts[0], out int r) &&
+                    int.TryParse(parts[1], out int g) &&
+                    int.TryParse(parts[2], out int b))
+                {
+                    systemColor = Color.FromArgb(r, g, b);
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(value) && value.StartsWith("#"))
+            {
+                systemColor = ColorTranslator.FromHtml(value);
+            }
+        }
+    }
+}

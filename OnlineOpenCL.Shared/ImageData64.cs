@@ -27,6 +27,12 @@ namespace OnlineOpenCL.Shared
 			set => this.RawData64 = value;
 		}
 
+		public string Length
+		{
+			get => this.RawData64.Length.ToString();
+			set { /* Do nothing, this is read-only */ }
+		}
+
 		private static readonly String[] allowedFormats = ["bmp", "png", "jpg"];
 
 		public ImageData64()

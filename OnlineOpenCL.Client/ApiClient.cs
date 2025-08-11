@@ -357,8 +357,7 @@ namespace OnlineOpenCL.Client
 		}
 
 		public async Task<AudioObjInfo> ExecuteTimestretch(Guid guid, string kernel = "timestretch_double",
-			string version = "03", double factor = 0.8, int chunkSize = 16384, float overlap = 0.5f,
-			bool copyGuid = true, bool allowTempSession = true)
+			string version = "03", double factor = 0.8, int chunkSize = 16384, float overlap = 0.5f)
 		{
 			var info = await this.GetAudioInfo(guid);
 			var task = this.internalClient.ExecuteTimestretchAsync(info.Id, kernel, version, factor, chunkSize, overlap);

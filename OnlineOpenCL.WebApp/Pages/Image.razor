@@ -1,0 +1,297 @@
+﻿@page "/image"
+
+@using OnlineOpenCL.Client
+@using OnlineOpenCL.Shared
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@using Radzen
+@using Radzen.Blazor
+@using System.Diagnostics
+@using System.Collections.Concurrent
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject ApiClient ApiClient
+@inject ApiUrlConfig ApiConfig
+
+<!-- Title -->
+<h1 style="font-family: 'Arial Black'">OnlineOpenCL WebApp -- Image<br></h1>
+
+<!-- Initialized status -->
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+    <RadzenText Text="OpenCL Status:" TextStyle="TextStyle.Subtitle1" />
+    <RadzenText Text="@openClServiceInfo.Status" Style="@(openClServiceInfo.Initialized ? "color: green" : "color: red")" />
+</RadzenStack>
+
+<!-- Waveform visualizer section: Narrow image with current info -->
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+    <RadzenImage Name="Image" Style="width: 100%; height: 200px; object-fit: contain;" Src="@imageBase64" Placeholder="Loading image..." />
+    <RadzenText Text="@selectedInfoString" TextStyle="TextStyle.Body1" Style="max-width: 600px; overflow-wrap: break-word; white-space: pre-wrap; font-family: Arial;" />
+</RadzenStack>
+
+<!-- Image selection section: DropDown with audio names + upload button + download button + remove button -->
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+    <RadzenListBox TValue="Guid" Data="@imageInfos" TextProperty="Name" ValueProperty="Id"
+                   @bind-Value="@selectedImageGuid" Change="@LoadImage"
+                   Style="width: 100%; height: 25%;" Name="ListBoxImageObjects" Placeholder="-- Select Image Object --">
+    </RadzenListBox>
+    <RadzenStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+        <RadzenButton Name="ButtonUploadImage" Style="width: 100%; font-family: Arial; background-color: #e0e0e0" Text="Upload"
+                ButtonType="Radzen.ButtonType.Button" ButtonStyle="Radzen.ButtonStyle.Light" Size="Radzen.ButtonSize.Medium" Variant="Radzen.Variant.Filled">
+            <InputFile id="imageUpload" OnChange="OnImageUpload" accept="image/*" class="rz-mb-2" />
+        </RadzenButton>
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+            <RadzenButton Name="ButtonDownloadSelectedImage" Style="width: auto; font-family: Arial; background-color: #e0e0e0" Text="Download"
+                          ButtonType="Radzen.ButtonType.Button" ButtonStyle="Radzen.ButtonStyle.Light" Size="Radzen.ButtonSize.Medium" Variant="Radzen.Variant.Filled"
+                          Click="@OnDownloadSelected" Disabled="@(selectedImageGuid == Guid.Empty)" ></RadzenButton>
+            <RadzenDropDown TValue="string" Name="DropDownFormat" Style="width: auto" Data="@availableFormats" @bind-Value="@selectedFormat"></RadzenDropDown>
+        </RadzenStack>
+        <RadzenButton Name="ButtonRemoveImageObj" Style="width: 100%; font-family: Arial" Text="Remove" ButtonType="Radzen.ButtonType.Button"
+                      ButtonStyle="Radzen.ButtonStyle.Danger" Size="Radzen.ButtonSize.Medium" Variant="Radzen.Variant.Filled" Click="@OnRemoveImageObj"
+                      Disabled="@(selectedImageGuid == Guid.Empty)" ></RadzenButton>
+    </RadzenStack>
+    <RadzenStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+        <RadzenButton Name="ButtonMoveImage" Style="@($"width: 100%; font-family: Arial; background-color: {(selectedImageInfo.OnHost ? "#A2D2FF" : "#A8E6CE")}")"
+                      Text="@($"{(selectedImageInfo.OnHost ? "Pull from" : "Push to")} OpenCL")"
+                      ButtonType="Radzen.ButtonType.Button" ButtonStyle="Radzen.ButtonStyle.Light" Size="Radzen.ButtonSize.Medium" Variant="Radzen.Variant.Filled"
+                      Click="@MoveImageOpenCl" Disabled="@(selectedImageGuid == Guid.Empty)"></RadzenButton>
+        <RadzenText Text="@($"Image Objects: {imageInfos.Count()}")" TextStyle="TextStyle.Body2" />
+    </RadzenStack>
+</RadzenStack>
+
+@code {
+    [CascadingParameter]
+    public Func<string, bool, Task> AddLogEntry { get; set; } = null!;
+    public string LogPrefix { get; set; } = "[/image] ";
+
+    private ClStatusInfo openClServiceInfo = new();
+    private IEnumerable<ImageObjInfo> imageInfos = [];
+
+    private string base64Format = "png";
+    private string imageBase64 = string.Empty;
+
+    private static IEnumerable<string> availableFormats = ["bmp", "png", "jpg"];
+    private string selectedFormat = "bmp";
+
+    private Guid selectedImageGuid = Guid.Empty;
+    private ImageObjInfo selectedImageInfo => imageInfos.FirstOrDefault(info => info.Id == selectedImageGuid) ?? new ImageObjInfo(null);
+
+    public bool singleLineInfo { get; set; } = false;
+    private string selectedInfoString => selectedImageInfo?.ToString() ?? "No image selected.";
+
+    private IEnumerable<ClKernelInfo> kernelInfos = [];
+    private string kernelFilter { get; set; } = "mandelbrot";
+    private string selectedKernelName = string.Empty;
+
+
+
+
+    private async Task AddLog(string message)
+    {
+        try
+        {
+            await AddLogEntry(LogPrefix + message, false);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Logging failed: {ex.Message}");
+        }
+    }
+
+    private async Task AddLog(string message, bool overwrite)
+    {
+        try
+        {
+            await AddLogEntry(LogPrefix + message, overwrite);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Logging failed: {ex.Message}");
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AddLog("Initializing Image page...").ConfigureAwait(false);
+        await RefreshInfos();
+        await AddLog("Image page initialized successfully.", true).ConfigureAwait(false);
+    }
+
+    protected async Task RefreshInfos()
+    {
+        Stopwatch sw = Stopwatch.StartNew();
+
+        try
+        {
+            await AddLog("Refreshing infos...").ConfigureAwait(false);
+
+            // Get OpenCL service info
+            openClServiceInfo = await ApiClient.GetOpenClServiceInfo();
+
+            // Get audio infos
+            imageInfos = await ApiClient.GetImageInfos();
+
+            // Get kernel infos
+            kernelInfos = await ApiClient.GetOpenClKernelInfos(kernelFilter);
+
+            StateHasChanged();
+
+            await AddLog($"Refreshed infos ({sw.ElapsedMilliseconds} ms elapsed).", true).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await AddLog($"Error refreshing infos: {ex.Message}").ConfigureAwait(false);
+            return;
+        }
+        finally
+        {
+            sw.Stop();
+            StateHasChanged();
+        }
+    }
+
+    protected async Task OnImageUpload(InputFileChangeEventArgs e)
+    {
+        await AddLog("Uploading image file...").ConfigureAwait(false);
+        var info = new ImageObjInfo(null);
+        selectedImageGuid = Guid.Empty;
+
+        try
+        {
+            var file = e.File;
+            if (file.Size > 0)
+            {
+                await using var stream = file.OpenReadStream(maxAllowedSize: 512 * 1024 * 1024);
+                FileParameter fp = new FileParameter(stream, file.Name, file.ContentType);
+                info = await ApiClient.UploadImage(fp);
+                await AddLog($"Uploaded '{info.Name}' successfully!").ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            await AddLog($"Error uploading audio: {ex.Message}", true).ConfigureAwait(false);
+        }
+        finally
+        {
+            await LoadImage().ConfigureAwait(true);
+            await RefreshInfos();
+        }
+    }
+
+    protected async Task OnDownloadSelected()
+    {
+        string fileName = string.Empty;
+
+        if (selectedImageInfo.Id != Guid.Empty)
+        {
+            await AddLog($"Downloading image with Guid: {selectedImageInfo.Id}...").ConfigureAwait(false);
+            try
+            {
+                // Direkt die URL zum API-Endpunkt aufrufen
+                string downloadUrl = $"{ApiConfig.Url}/api/image/download/{selectedImageInfo.Id}/{selectedFormat}";
+
+                // Rufe die JavaScript-Funktion auf, um den Download zu starten
+                await JSRuntime.InvokeVoidAsync("downloadFileFromUrl", downloadUrl, $"{fileName}.{selectedFormat}");
+
+                // Füge diese Zeile hinzu:
+                await AddLog($"Got Download-URL: {downloadUrl}");
+
+                await AddLog($"Downloading '{fileName}' started.");
+            }
+            catch (Exception ex)
+            {
+                await AddLog($"Error downloading '{fileName}': {ex.Message}") ;
+            }
+            finally
+            {
+                await RefreshInfos();
+            }
+        }
+        else
+        {
+            await AddLog("No image selected to download.");
+        }
+    }
+
+    private async Task OnRemoveImageObj()
+    {
+        if (selectedImageInfo.Id == Guid.Empty)
+        {
+            await AddLog("No image selected to remove.").ConfigureAwait(false);
+            return;
+        }
+
+        var result = false;
+
+        try
+        {
+            result = await ApiClient.RemoveImage(selectedImageInfo.Id);
+        }
+        catch (Exception ex)
+        {
+            await AddLog($"Error removing image object '{selectedImageInfo.Id}': {ex.Message}").ConfigureAwait(false);
+            return;
+        }
+        finally
+        {
+            if (result)
+            {
+                await AddLog($"Image object '{selectedImageInfo.Id}' removed successfully.").ConfigureAwait(false);
+            }
+            else
+            {
+                await AddLog($"Failed to remove image object '{selectedImageInfo.Id}'.").ConfigureAwait(false);
+            }
+
+            selectedImageGuid = Guid.Empty;
+            await RefreshInfos();
+            await LoadImage().ConfigureAwait(false);
+        }
+    }
+
+    private async Task LoadImage()
+    {
+        var info = selectedImageInfo;
+        if (info == null || info.Id == Guid.Empty)
+        {
+            imageBase64 = string.Empty;
+            await AddLog("No image selected or invalid image object.").ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            var data = await ApiClient.GetBase64Image(info.Id, base64Format);
+            imageBase64 = data.Data64;
+            await AddLog($"Retrieved base64 string from '{info.Id}' (length: {data.Length})").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            imageBase64 = string.Empty;
+            await AddLog($"Error getting base64 string for image ''{info.Id}': " + ex).ConfigureAwait(false);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task MoveImageOpenCl()
+    {
+        if (selectedImageGuid == Guid.Empty)
+        {
+            await AddLog("No image selected to push.").ConfigureAwait(false);
+            return;
+        }
+        try
+        {
+            //await ApiClient.MoveImage(selectedImageGuid);
+            await AddLog($"Image with Guid: '{selectedImageGuid}' now on {(selectedImageInfo.OnHost ? "Host" : "OpenCL")}").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await AddLog($"Error moving image to {(selectedImageInfo.OnHost ? "OpenCL" : "Host")} with Guid '{selectedImageGuid}': {ex.Message}").ConfigureAwait(false);
+        }
+    }
+}

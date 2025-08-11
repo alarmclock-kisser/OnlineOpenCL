@@ -27,6 +27,12 @@ namespace OnlineOpenCL.Shared
 			set => this.RawData64 = value;
 		}
 
+		public string Length
+		{
+			get => this.RawData64.Length.ToString();
+			set { /* Intentionally left empty */ }
+		}
+
 		private static readonly String[] allowedFormats = ["bmp", "png", "jpg"];
 
 		public AudioData64()
