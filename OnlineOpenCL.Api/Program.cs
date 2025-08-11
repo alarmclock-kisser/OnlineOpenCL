@@ -25,7 +25,7 @@ namespace OnlineOpenCL.Api
 			{
 				options.AddPolicy("BlazorCors", policy =>
 				{
-					policy.WithOrigins("https://www.oocl.work:7172")
+					policy.WithOrigins("https://www.oocl.work:7161")
 						  .AllowAnyHeader()
 						  .AllowAnyMethod();
 				});

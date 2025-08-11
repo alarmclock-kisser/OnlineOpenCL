@@ -1,0 +1,61 @@
+﻿@page "/_Host"
+@using OnlineOpenCL.WebApp.Components
+@using OnlineOpenCL.WebApp
+@using OnlineOpenCL.Client
+@using OnlineOpenCL.Shared
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Mvc.TagHelpers
+@using Microsoft.JSInterop
+@using Radzen
+@using Radzen.Blazor
+@namespace OnlineOpenCL.WebApp.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OnlineOpenCL WebApp</title>
+    <base href="~/" />
+    <link href="app.css" rel="stylesheet" />
+    <link href="_content/Radzen.Blazor/css/default-base.css" rel="stylesheet" />
+    <link href="_content/Radzen.Blazor/css/default.css" rel="stylesheet" />
+</head>
+<body>
+<app>
+    <component type="typeof(App)" render-mode="ServerPrerendered" />
+    </app>
+<script src="_framework/blazor.server.js"></script>
+<script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+<script>
+        function downloadFileFromUrl(url, fileName) {
+            const anchorElement = document.createElement('a');
+            anchorElement.href = url;
+            anchorElement.download = fileName || '';
+            document.body.appendChild(anchorElement);
+            anchorElement.click();
+            document.body.removeChild(anchorElement);
+        }
+    </script>
+    <script>
+        window.scrollToBottom = function (elementOrId) {
+            let element = elementOrId;
+            if (typeof elementOrId === "string") {
+                element = document.getElementById(elementOrId);
+            }
+            if (element) {
+                element.scrollTop = element.scrollHeight;
+                const lastEntry = element.lastElementChild;
+                if (lastEntry) {
+                    lastEntry.scrollIntoView({ behavior: "smooth" });
+                }
+            }
+        };
+    </script>
+</body>
+</html>

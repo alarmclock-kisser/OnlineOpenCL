@@ -11,6 +11,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OnlineOpenCL.Core", "Online
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OnlineOpenCL.Shared", "OnlineOpenCL.Shared\OnlineOpenCL.Shared.csproj", "{90A0FB52-67D7-4D6E-B6ED-4AB94D78DFA9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OnlineOpenCL.WebApp", "OnlineOpenCL.WebApp\OnlineOpenCL.WebApp.csproj", "{F40A9AEE-D055-4372-9EB8-C465AEE842DD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OnlineOpenCL.Client", "OnlineOpenCL.Client\OnlineOpenCL.Client.csproj", "{C8098EB1-40B7-4F8A-9D9B-61F954CB11CA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +37,14 @@ Global
 		{90A0FB52-67D7-4D6E-B6ED-4AB94D78DFA9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{90A0FB52-67D7-4D6E-B6ED-4AB94D78DFA9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{90A0FB52-67D7-4D6E-B6ED-4AB94D78DFA9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F40A9AEE-D055-4372-9EB8-C465AEE842DD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F40A9AEE-D055-4372-9EB8-C465AEE842DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F40A9AEE-D055-4372-9EB8-C465AEE842DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F40A9AEE-D055-4372-9EB8-C465AEE842DD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C8098EB1-40B7-4F8A-9D9B-61F954CB11CA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C8098EB1-40B7-4F8A-9D9B-61F954CB11CA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C8098EB1-40B7-4F8A-9D9B-61F954CB11CA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C8098EB1-40B7-4F8A-9D9B-61F954CB11CA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -21,6 +21,8 @@ namespace OnlineOpenCL.Shared
 		public IEnumerable<float> SizesMb { get; set; } = [0.0f, 0.0f, 0.0f];
 		public float Utilization { get; set; } = 0.0f;
 
+		public IEnumerable<PieChartData> PieChart { get; set; } = [];
+
 		// private dict for sizes and their quotients
 		private static readonly Dictionary<string, double> SizeQuotients = new()
 		{
@@ -74,6 +76,36 @@ namespace OnlineOpenCL.Shared
 
 			// Calculate utilization
 			this.Utilization = (float) Math.Round(service.GetMemoryUtilization(), decimals);
+		}
+
+		private void UpdatePieChartData() =>
+			this.PieChart =
+			[
+				new PieChartData("Used Memory", (float)this.Utilization),
+				new PieChartData("Free Memory", (float)(100 - this.Utilization))
+			];
+
+		private void GetPieChart()
+		{
+			this.PieChart = [new PieChartData() { Label = "Used", Value = this.Utilization }, new PieChartData() { Label = "Free", Value = 100f - this.Utilization }];
+		}
+	}
+
+	public class PieChartData
+	{
+		public string Label { get; set; } = string.Empty;
+		public float Value { get; set; } = 0.0f;
+
+
+		public PieChartData()
+		{
+
+		}
+
+		public PieChartData(string label, float value)
+		{
+			this.Label = label;
+			this.Value = value;
 		}
 	}
 }

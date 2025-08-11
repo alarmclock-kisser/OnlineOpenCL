@@ -1,0 +1,269 @@
+﻿@page "/"
+@page "/home"
+
+@using OnlineOpenCL.Client
+@using OnlineOpenCL.Shared
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@using Radzen
+@using Radzen.Blazor
+@using System.Linq
+@using System.Net
+@using OnlineOpenCL.WebApp.Pages
+@using System.Drawing
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject ApiClient ApiClient
+@inject ApiUrlConfig ApiConfig
+
+<!-- Title -->
+<h1 style="font-family: 'Arial Black'">OnlineOpenCL WebApp -- Home<br></h1>
+
+<!-- OpenCL Section -->
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+    <RadzenDropDown Data=@openClDeviceInfos TextProperty="Name" ValueProperty="Index" @bind-Value=@selectedOpenClDeviceIndex @onchange="@StateHasChanged"
+                    AllowClear="false" AllowFiltering="false" Style="width: 100%; max-width: 600px" Name="DropDownDevices" Placeholder="-- Select OpenCL Device --" FilterAsYouType="false" AllowSelectAll="false">
+    </RadzenDropDown>
+    <RadzenButton Name="ButtonOpenClInitialize"
+                  Style="@buttonInitializeStyleString"
+                  Text="@buttonInitializeText"
+                  ButtonType="Radzen.ButtonType.Submit" ButtonStyle="Radzen.ButtonStyle.Light" Size="Radzen.ButtonSize.Medium" Variant="Radzen.Variant.Filled"
+                  Disabled="@(!openClDeviceInfos.Any() || (openClStatusInfo.Initialized && selectedOpenClDeviceIndex == openClStatusInfo.Index))" Click="@ButtonOpenClInitializeClick">
+    </RadzenButton>
+    <RadzenButton Text="Dispose" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Medium"
+                  Click="@ButtonOpenClDisposeClick" />
+</RadzenStack>
+
+<!-- Initialized status -->
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+    <RadzenText Text="OpenCL Status:" TextStyle="TextStyle.Subtitle1" />
+    <RadzenText Text="@openClStatusInfo.Status" Style="@(openClStatusInfo.Initialized ? "color: green" : "color: red")" />
+</RadzenStack>
+
+<!-- Usage dashboard: Pie-chart with percentage, below total, used, free with dropdown for B, KB, MB, GB -->
+<RadzenStack Orientation="Orientation.Horizontal" Style="width: 60vh" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+    <RadzenText Text="OpenCL Usage:" TextStyle="TextStyle.Subtitle1" />
+    <RadzenChart SeriesClick="@RefreshInfos"
+                 @onmouseover="@(() => hoveringOverChart = true)"
+                 @onmouseout="@(() => hoveringOverChart = false)">
+        <RadzenPieSeries TItem="OnlineOpenCL.Shared.PieChartData" Data="@openClUsageInfo.PieChart" Title="Memory usage" Fills="@pieChartColors"
+                  ValueProperty="Value" CategoryProperty="Label">
+            <RadzenSeriesDataLabels Visible="@hoveringOverChart" />
+        </RadzenPieSeries>
+    </RadzenChart>
+    <RadzenStack Orientation="Orientation.Vertical" Style="width: 35vh" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+        <RadzenDropDown @bind-Value="@selectedSizeMagnitude" TValue="string" Data="sizeMagnitudes" SelectedItem="@("KB")" Change="@RefreshInfos"></RadzenDropDown>
+        <RadzenText Text="@($"Total: {openClUsageInfo.TotalMemory} {selectedSizeMagnitude}")" />
+        <RadzenText Text="@($"Used: {openClUsageInfo.UsedMemory} {selectedSizeMagnitude}")" />
+        <RadzenText Text="@($"Free: {openClUsageInfo.AvailableMemory} {selectedSizeMagnitude}")" />
+    </RadzenStack>
+</RadzenStack>
+
+<!-- Memory objects: For every memory info an accordion (default not expanded) with label IndexPointer (left) and Size (right) as magnitude. When expanded (vertically) show more info -->
+<RadzenStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem" class="rz-p-sm-12" Reverse="false">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem">
+        <RadzenText Text="@("Pointers as " + (pointersAsHex ? "Dec" : "Hex"))" TextStyle="TextStyle.Subtitle1" TextAlign="TextAlign.Left" />
+        <InputCheckbox @bind-Value="@pointersAsHex" @onchange="@PointersFormatToggled" />
+    </RadzenStack>
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.1rem">
+        <RadzenText Text="@($"OpenCL Memory Objects: ")" TextStyle="TextStyle.Subtitle1" TextAlign="TextAlign.Left"/>
+        <RadzenText Text="@($"({openClMemoryInfos.Count()})")" TextStyle="TextStyle.Subtitle1" TextAlign="TextAlign.Right" />
+    </RadzenStack>
+    @foreach (var info in openClMemoryInfos)
+    {
+        <RadzenAccordionItem Text="@($"< {info.IndexHandle} > | Size: {info.SizeInBytes} Bytes")">
+            <RadzenStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Start" JustifyContent="JustifyContent.Start" Gap="0.1rem">
+                <RadzenText Text="@($"Type: '{info.Type}' ({info.TypeSize} Bytes)")" />
+                <RadzenText Text="@($"Buffer stride: {info.IndexLength}")" />
+                <RadzenAccordion Text=@($"Buffer count: {info.Count}") Expanded="false">
+                   @for (int p = 0; p < info.CountInt; p++)
+                    {
+                        var pointer = info.Pointers.ElementAt(p);
+                        var length = info.Lengths.ElementAt(p);
+                        <RadzenAccordionItem Text="@($"< {pointer} > ({length})")"></RadzenAccordionItem>
+                    }
+                </RadzenAccordion>
+            </RadzenStack>
+        </RadzenAccordionItem>
+    }
+</RadzenStack>
+
+
+
+@code {
+    [CascadingParameter]
+    public Func<string, bool, Task> AddLogEntry { get; set; } = null!;
+    public string LogPrefix { get; set; } = "[/home] ";
+
+    private int selectedOpenClDeviceIndex = -1;
+    private ClStatusInfo openClStatusInfo = new ClStatusInfo();
+    private ClUsageInfo openClUsageInfo = new ClUsageInfo();
+
+    private IEnumerable<ClDeviceInfo> openClDeviceInfos = [];
+    private IEnumerable<ClKernelInfo> openClKernelInfos = [];
+    private IEnumerable<ClMemInfo> openClMemoryInfos = [];
+
+    private string kernelFilter = string.Empty;
+
+    private string buttonInitializeColor = "#e0e0e0";
+    private string buttonInitializeStyleString => "width: 140px; font-family: Arial; background-color: " + buttonInitializeColor;
+    private string buttonInitializeText = "Initialize";
+
+    private string selectedSizeMagnitude = "KB";
+    private IEnumerable<string> sizeMagnitudes = new List<string>
+    {
+        "B", "KB", "MB", "GB"
+    };
+
+    private IEnumerable<string> pieChartColors = new List<string>
+    {
+        "#FFB6C1", // Pastel red
+        "#C1E1C1" // Pastel green
+    };
+    private bool hoveringOverChart = false;
+
+    private bool pointersAsHex = false;
+
+
+    private async Task AddLog(string message)
+    {
+        try
+        {
+            await AddLogEntry(LogPrefix + message, false);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Logging failed: {ex.Message}");
+        }
+    }
+
+    private async Task AddLog(string message, bool overwrite)
+    {
+        try
+        {
+            await AddLogEntry(LogPrefix + message, overwrite);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Logging failed: {ex.Message}");
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AddLog("Initializing Control page...").ConfigureAwait(false);
+        await RefreshInfos();
+        await SelectOpenClDeviceByName("Core");
+        await AddLog("Control page initialized successfully.", true).ConfigureAwait(false);
+    }
+
+    protected async Task RefreshInfos()
+    {
+        // Get OpenCL infos
+        openClStatusInfo = await ApiClient.GetOpenClServiceInfo();
+        StateHasChanged();
+        openClUsageInfo = await ApiClient.GetOpenClUsageInfo(selectedSizeMagnitude);
+        openClDeviceInfos = await ApiClient.GetOpenClDeviceInfos();
+        
+        openClKernelInfos = await ApiClient.GetOpenClKernelInfos(kernelFilter);
+
+        StateHasChanged();
+
+        openClMemoryInfos = await ApiClient.GetOpenClMemoryInfos();
+        await AddLog($"Refreshed infos.");
+
+        StateHasChanged();
+    }
+
+    protected async Task SelectOpenClDeviceByName(string name = "Intel")
+    {
+        if (!openClDeviceInfos.Any())
+        {
+            await AddLog($"No devices loaded yet to select from.");
+            StateHasChanged();
+            return;
+        }
+
+        var foundDevice = openClDeviceInfos.FirstOrDefault(d => d.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+        if (foundDevice != null)
+        {
+            selectedOpenClDeviceIndex = foundDevice.Index;
+            await AddLog($"Selected device: '{foundDevice.Name}' (ID: {foundDevice.Index})");
+        }
+        else
+        {
+            await AddLog($"No device found with name containing '{name}'.");
+        }
+
+        StateHasChanged();
+    }
+
+    protected async Task ButtonOpenClInitializeClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs args)
+    {
+        if (selectedOpenClDeviceIndex == -1)
+        {
+            buttonInitializeColor = "#e0e0e0";
+            await AddLog("Please select a CL-Device to initialize.");
+            StateHasChanged();
+            return;
+        }
+
+        // Set color to white
+        buttonInitializeColor = "#D3D3D3";
+        buttonInitializeText = "Initializing...";
+        await AddLog($"Started initializing CL-Device with ID {selectedOpenClDeviceIndex} ...");
+        StateHasChanged();
+
+        openClStatusInfo = await ApiClient.InitializeOpenCl(selectedOpenClDeviceIndex);
+        await RefreshInfos();
+        if (openClStatusInfo.Initialized)
+        {
+            // Light green
+            buttonInitializeColor = "#C1E1C1";
+            buttonInitializeText = "Initialized!";
+            await AddLog($"OpenCL device initialized successfully: {openClStatusInfo.Device} [{openClStatusInfo.Index}]");
+        }
+        else
+        {
+            // Light red
+            buttonInitializeColor = "#FFB6C1";
+            buttonInitializeText = "Error (!)";
+            selectedOpenClDeviceIndex = -1;
+            await AddLog($"Failed to initialize OpenCL device [{selectedOpenClDeviceIndex}].");
+        }
+
+        await RefreshInfos();
+    }
+
+    protected async Task ButtonOpenClDisposeClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs args)
+    {
+        if (selectedOpenClDeviceIndex == -1)
+        {
+            await AddLog("No OpenCL device selected to dispose.");
+            return;
+        }
+        await AddLog($"Disposing OpenCL device with ID {selectedOpenClDeviceIndex} ...");
+        var info = await ApiClient.DisposeOpenCl();
+        
+        if (!info.Initialized)
+        {
+            await AddLog($"OpenCL device disposed successfully: {selectedOpenClDeviceIndex}");
+            buttonInitializeColor = "#e0e0e0";
+            buttonInitializeText = "Initialize";
+        }
+        else
+        {
+            await AddLog($"Failed to dispose OpenCL device [{selectedOpenClDeviceIndex}].");
+        }
+
+        await RefreshInfos();
+    }
+
+    protected void PointersFormatToggled(ChangeEventArgs e)
+    {
+        StateHasChanged();
+        AddLog($"Pointers format toggled to {(pointersAsHex ? "Hex" : "Dec")}.").ConfigureAwait(false);
+    }
+}

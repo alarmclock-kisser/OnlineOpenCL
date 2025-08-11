@@ -18,9 +18,13 @@ namespace OnlineOpenCL.Shared
 		public string Type { get; set; } = "void";
 		public int TypeSize { get; set; } = 0;
 		public string Count { get; set; } = "0";
+		public int CountInt { get; set; } = 0;
 		public string IndexHandle { get; set; } = "0";
 		public string IndexLength { get; set; } = "0";
 		public string SizeInBytes { get; set; } = "0";
+
+		public IEnumerable<string> Pointers { get; set; } = [];
+		public IEnumerable<string> Lengths { get; set; } = [];
 
 
 		public ClMemInfo()
@@ -43,9 +47,13 @@ namespace OnlineOpenCL.Shared
 			this.Type = mem.Type;
 			this.TypeSize = mem.TypeSize;
 			this.Count = mem.Count;
+			this.CountInt = mem.GetCount();
 			this.IndexHandle = mem.IndexHandle;
 			this.IndexLength = mem.IndexLength;
 			this.SizeInBytes = mem.Size;
+
+			this.Pointers = mem.Pointers;
+			this.Lengths = mem.Lengths;
 		}
 	}
 }

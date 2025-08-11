@@ -25,6 +25,7 @@ namespace OnlineOpenCL.Shared
 		public float SizeInMb { get; set; } = 0.0f;
 		public float ElapsedProcessing { get; set; } = 0.0f;
 
+		public string ErrorMessage { get; set; } = string.Empty;
 
 		public ImageObjInfo()
 		{

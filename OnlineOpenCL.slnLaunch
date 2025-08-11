@@ -1,0 +1,37 @@
+[
+  {
+    "Name": "API (https)",
+    "Projects": [
+      {
+        "Path": "OnlineOpenCL.Api\\OnlineOpenCL.Api.csproj",
+        "Action": "Start",
+        "DebugTarget": "https"
+      }
+    ]
+  },
+  {
+    "Name": "Full (https)",
+    "Projects": [
+      {
+        "Path": "OnlineOpenCL.Api\\OnlineOpenCL.Api.csproj",
+        "Action": "Start",
+        "DebugTarget": "https"
+      },
+      {
+        "Path": "OnlineOpenCL.WebApp\\OnlineOpenCL.WebApp.csproj",
+        "Action": "Start",
+        "DebugTarget": "https"
+      }
+    ]
+  },
+  {
+    "Name": "WebApp (https)",
+    "Projects": [
+      {
+        "Path": "OnlineOpenCL.WebApp\\OnlineOpenCL.WebApp.csproj",
+        "Action": "Start",
+        "DebugTarget": "https"
+      }
+    ]
+  }
+]

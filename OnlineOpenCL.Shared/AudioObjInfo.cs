@@ -39,6 +39,8 @@ namespace OnlineOpenCL.Shared
 		public bool Playing { get; set; } = false;
 		public string CurrentPosition { get; set; } = "00:00.000";
 
+		public string ErrorMessage { get; set; } = string.Empty;
+
 
 		public AudioObjInfo()
 		{

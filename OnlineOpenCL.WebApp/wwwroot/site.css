@@ -1,0 +1,21 @@
+﻿/* Light Mode (Default) */
+body {
+	--rz-background-primary: #ffffff;
+	--rz-text-primary: #212529;
+}
+
+	/* Dark Mode */
+	body.dark-mode {
+		--rz-background-primary: #1a1a1a;
+		--rz-text-primary: #f8f9fa;
+		background-color: var(--rz-background-primary) !important;
+		color: var(--rz-text-primary) !important;
+	}
+
+/* Radzen-Komponenten anpassen */
+.dark-mode .rz-panel,
+.dark-mode .rz-sidebar,
+.dark-mode .rz-header {
+	background-color: var(--rz-background-primary) !important;
+	color: var(--rz-text-primary) !important;
+}

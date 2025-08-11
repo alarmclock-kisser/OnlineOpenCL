@@ -1,0 +1,211 @@
+﻿@using Radzen
+@using Radzen.Blazor
+@using System.Collections.Concurrent
+@using System.Diagnostics
+@inject IJSRuntime JSRuntime
+@inherits LayoutComponentBase
+
+<CascadingValue Value="@AddLogEntryMethod">
+    <RadzenLayout>
+        <!-- Head -->
+        <HeadContent>
+
+
+        </HeadContent>
+
+        <!-- Header -->
+        <RadzenHeader>
+            <RadzenRow AlignItems="AlignItems.Center">
+                <RadzenColumn><RadzenSidebarToggle Click="@(args => SidebarToggleClick())" /></RadzenColumn>
+                <RadzenColumn><div style="font-size: 24px; font-weight: bold;">OnlineOpenCL WebApp</div></RadzenColumn>
+            </RadzenRow>
+        </RadzenHeader>
+
+        <!-- Sidebar -->
+        <RadzenSidebar @bind-Expanded="@sidebarExpanded" Style="width: 20vw">
+            <RadzenPanelMenu>
+                <RadzenPanelMenuItem Text="Home" Path="" Icon="home" Match="NavLinkMatch.All" />
+                <RadzenPanelMenuItem Text="Image" Path="image" Icon="photo" />
+                <RadzenPanelMenuItem Text="Fractals" Path="fractal" Icon="widgets" />
+                <RadzenPanelMenuItem Text="Audio" Path="audio" Icon="audiotrack" />
+            </RadzenPanelMenu>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center">
+                <RadzenLabel Text="Dark Mode:" Style="margin-right: 10px;" />
+                <RadzenSwitch @bind-Value="@darkModeEnabled" Change="@ToggleDarkMode" Style="margin-right: 10px;" />
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween" Style="margin-top: 10px;">
+                <RadzenButton Text="Clear Log" Click="@(() => { logEntries.Clear(); StateHasChanged(); })" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" />
+                <RadzenText Text="@($"Log Entries: {logEntries.Count}")" TextStyle="TextStyle.Body2" />
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Vertical"
+                         Style="flex-grow: 1;
+                               overflow: hidden">
+
+                <RadzenText Text="Log:" TextStyle="TextStyle.Caption"/>
+
+                <div id="logContainer"
+                     @ref="logContainer"
+                     style="overflow-y: auto;
+                            border: 1px solid #ccc;
+                            padding: 10px;
+                            flex-grow: 1;
+                            max-height: 50vh;
+                            word-break: break-word;">
+
+                    @foreach (var entry in logEntries.OrderBy(kv => kv.Key).TakeLast(maxLogEntries))
+                    {
+                        <div style="white-space: pre-wrap; word-wrap: break-word; padding: 2px 0; border-bottom: 1px solid #eef;"> @entry.Value </div>
+                    }
+                </div>
+            </RadzenStack>
+        </RadzenSidebar>
+
+        <!-- Hauptinhalt -->
+        <RadzenBody>
+            <RadzenContent Container="main">
+                @Body
+            </RadzenContent>
+        </RadzenBody>
+
+        <!-- Footer -->
+        <RadzenFooter>
+            <RadzenRow AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center">
+                <RadzenColumn>
+                    <div style="text-align: center; font-size: 14px; color: #666;">
+                        &copy; 2025 alarmclock-kisser 
+                    </div>
+                </RadzenColumn>
+            </RadzenRow>
+        </RadzenFooter>
+
+    </RadzenLayout>
+</CascadingValue>
+
+@code {
+
+    public Func<string, bool, Task> AddLogEntryMethod => AddLogEntry;
+    public string LogPrefix { get; set; } = "[GLOBAL] ";
+    public bool logMinimal { get; set; } = true;
+    public bool logElapsed { get; set; } = false;
+
+    bool sidebarExpanded = false;
+    bool darkModeEnabled = false;
+    private ConcurrentDictionary<long, string> logEntries = [];
+    private ElementReference logContainer;
+    private int maxLogEntries = 100;
+    public bool experimentalAllowEntryUpdates { get; set; } = false;
+
+
+
+    public async Task<int> AddLogEntry(string message = "", bool overwriteLastEntry = false)
+    {
+        if (!string.IsNullOrWhiteSpace(message) && !".!?".Contains(message.Trim().Last()))
+        {
+            message += ".";
+        }
+
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        message = "[" + DateTime.Now.ToString("HH:mm:ss.fff") + "] " + message;
+
+        try
+        {
+            if (overwriteLastEntry && logEntries.Any() && experimentalAllowEntryUpdates)
+            {
+                logEntries[logEntries.Keys.Last()] = message;
+            }
+            else
+            {
+                logEntries.TryAdd(DateTime.Now.Ticks, message);
+                if (logEntries.Count > maxLogEntries)
+                {
+                    logEntries.TryRemove(logEntries.Keys.First(), out _);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Log error: {ex.Message}");
+        }
+        finally
+        {
+            stopwatch.Stop();
+
+            if (logElapsed)
+            {
+                message += $" (Elapsed: {stopwatch.ElapsedMilliseconds} ms)";
+            }
+
+            if (overwriteLastEntry && experimentalAllowEntryUpdates)
+            {
+                // If overwritten & allowed, add elapsed ms to the last entry
+                if (logEntries.Any())
+                {
+                    var lastKey = logEntries.Keys.Last();
+                    if (logEntries.TryGetValue(lastKey, out var lastEntry))
+                    {
+                        logEntries[lastKey] = $"{lastEntry} (Elapsed: {stopwatch.ElapsedMilliseconds} ms)";
+                    }
+                }
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+
+        return (int)stopwatch.ElapsedMilliseconds;
+    }
+
+    async Task ToggleDarkMode(bool log = true)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync(
+                "document.body.classList.toggle",
+                "dark-mode",
+                darkModeEnabled
+            );
+        }
+        catch (Exception ex)
+        {
+            await AddLogEntry($"Error toggling dark mode: {ex.Message}", true);
+        }
+        finally
+        {
+            if (log || logMinimal)
+            {
+                await AddLogEntry($"Dark mode {(darkModeEnabled ? "enabled" : "disabled")}.");
+            }
+        }
+    }
+
+    async Task SidebarToggleClick(bool log = false)
+    {
+        sidebarExpanded = !sidebarExpanded;
+
+        if (log || logMinimal)
+        {
+            await AddLogEntry($"Sidebar {(sidebarExpanded ? "expanded" : "collapsed")}").ConfigureAwait(false);
+        }
+        
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && logMinimal)
+        {
+            await AddLogEntry("Initial rendering started...").ConfigureAwait(false);
+        }
+        if (logEntries.Any())
+        {
+            await JSRuntime.InvokeVoidAsync("scrollToBottom", "logContainer");
+        }
+
+        if (firstRender && logMinimal)
+        {
+            await AddLogEntry("Initial rendering completed!", true).ConfigureAwait(false);
+            await AddLogEntry("Dark mode is " + (darkModeEnabled ? "enabled" : "disabled")).ConfigureAwait(false);
+            await AddLogEntry("Sidebar is " + (sidebarExpanded ? "expanded" : "collapsed")).ConfigureAwait(false);
+        }
+    }
+}
